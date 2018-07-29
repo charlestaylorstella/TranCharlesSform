@@ -135,7 +135,7 @@ def register_model(name=None):
 
   return lambda model_cls: decorator(model_cls, name)
 
-
+# MAIN STEP Build Model 
 def model(name):
   if name not in _MODELS:
     raise LookupError("Model %s never registered.  Available models:\n %s" %

@@ -143,6 +143,7 @@ class Transformer(t2t_model.T2TModel):
       # Expand since t2t expects 4d tensors.
       return tf.expand_dims(decoder_output, axis=2)
 
+  # MAIN STEP Build Model 
   def body(self, features):
     """Transformer main model_fn.
 

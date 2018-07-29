@@ -57,7 +57,7 @@ def tf_inplace_ops():
   from tensorflow.python.ops import inplace_ops  # pylint: disable=g-import-not-at-top
   return inplace_ops
 
-
+# MAIN STEP Build Model
 class T2TModel(base.Layer):
   """Abstract base class for models.
 
@@ -252,6 +252,7 @@ class T2TModel(base.Layer):
 
     return sharded_logits, losses
 
+  # MAIN STEP Build Model 
   def model_fn(self, features):
     with tf.variable_scope(tf.get_variable_scope(), use_resource=True):
       transformed_features = self.bottom(features)
@@ -328,7 +329,8 @@ class T2TModel(base.Layer):
         transformed_features[key + "_raw"] = features[key]
 
     return transformed_features
-
+  
+  # MAIN STEP Build Model
   def body(self, features):
     """Most models will override this function.
 
@@ -1134,6 +1136,7 @@ class T2TModel(base.Layer):
         features[k].append(v)
     return features
 
+  # MAIN STEP Build Model
   @staticmethod
   def get_train_hooks(model_name):
     model_cls = registry.model(model_name)

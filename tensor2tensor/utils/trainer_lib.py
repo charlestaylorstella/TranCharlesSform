@@ -465,6 +465,7 @@ def create_experiment(
       validation_monitor_kwargs=validation_monitor_kwargs,
       use_early_stopping=use_early_stopping,
       early_stopping_kwargs=early_stopping_kwargs)
+  # MAIN STEP Build Model 
   train_hooks += t2t_model.T2TModel.get_train_hooks(model_name)
   eval_hooks += t2t_model.T2TModel.get_eval_hooks(model_name)
 

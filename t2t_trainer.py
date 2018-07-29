@@ -355,11 +355,12 @@ def main(argv):
   hparams = create_hparams()
 
   with maybe_cloud_tpu():
-    exp_fn = create_experiment_fn()
-    exp = exp_fn(create_run_config(hparams), hparams)
+    # MAIN STEP Build Model
+    exp_fn = create_experiment_fn() # CALL mODEL (e.g. transformor)
+    exp = exp_fn(create_run_config(hparams), hparams) # Init Network (Build Model)
     if is_chief():
       save_metadata(hparams)
-    execute_schedule(exp)
+    execute_schedule(exp) # Run Model (training)
 
 
 if __name__ == "__main__":
