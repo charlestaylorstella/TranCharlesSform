@@ -1030,7 +1030,7 @@ def features_to_nonpadding(features, inputs_or_targets="inputs"):
 
 def transformer_prepare_encoder(inputs, target_space, hparams, features=None):
   """Prepare one shard of the model for the encoder.
-
+  tzl comment: this function is for emebdding on input and position
   Args:
     inputs: a Tensor.
     target_space: a Tensor.
@@ -1048,26 +1048,30 @@ def transformer_prepare_encoder(inputs, target_space, hparams, features=None):
   encoder_input = inputs
   if features and "inputs_segmentation" in features:
     # Packed dataset.  Keep the examples from seeing each other.
+    print("in features")
     inputs_segmentation = features["inputs_segmentation"]
     inputs_position = features["inputs_position"]
     targets_segmentation = features["targets_segmentation"]
     encoder_self_attention_bias = common_attention.attention_bias_same_segment(
-        inputs_segmentation, inputs_segmentation)
+        inputs_segmentation, inputs_segmentation) 
+    # return a Matrix with input1_length * input2_legnth indicates the equal between input1 and input2
     encoder_decoder_attention_bias = (
         common_attention.attention_bias_same_segment(targets_segmentation,
                                                      inputs_segmentation))
   else:
+    print("else features")
     # Usual case - not a packed dataset.
-    encoder_padding = common_attention.embedding_to_padding(encoder_input)
-    ignore_padding = common_attention.attention_bias_ignore_padding(
+    encoder_padding = common_attention.embedding_to_padding(encoder_input) 
+    # detect all 0 emb. Return a binary array indicates whose emb_vec is all 0
+    ignore_padding = common_attention.attention_bias_ignore_padding( # just expand_dims
         encoder_padding)
     encoder_self_attention_bias = ignore_padding
     encoder_decoder_attention_bias = ignore_padding
     inputs_position = None
-  if hparams.proximity_bias:
+  if hparams.proximity_bias: # non this branch according to hparam
     encoder_self_attention_bias += common_attention.attention_bias_proximal(
         common_layers.shape_list(inputs)[1])
-  if hparams.get("use_target_space_embedding", True):
+  if hparams.get("use_target_space_embedding", True): # this branch
     # Append target_space_id embedding to inputs.
     emb_target_space = common_layers.embedding(
         target_space,
@@ -1078,14 +1082,14 @@ def transformer_prepare_encoder(inputs, target_space, hparams, features=None):
         if hparams.activation_dtype == "bfloat16" else tf.float32)
     emb_target_space = tf.reshape(emb_target_space, [1, 1, -1])
     encoder_input += emb_target_space
-  if hparams.pos == "timing":
+  if hparams.pos == "timing": # this branch
     if inputs_position is not None:
-      encoder_input = common_attention.add_timing_signal_1d_given_position(
+      encoder_input = common_attention.add_timing_signal_1d_given_position(  #sth about position
           encoder_input, inputs_position)
     else:
       encoder_input = common_attention.add_timing_signal_1d(encoder_input)
   elif hparams.pos == "emb":
-    encoder_input = common_attention.add_positional_embedding(
+    encoder_input = common_attention.add_positional_embedding( 
         encoder_input, hparams.max_length, "inputs_positional_embedding",
         inputs_position)
   if hparams.activation_dtype == "bfloat16":
@@ -1187,7 +1191,7 @@ def transformer_encoder(encoder_input,
     y: a Tensors
   """
   x = encoder_input
-  attention_dropout_broadcast_dims = (
+  attention_dropout_broadcast_dims = ( # get dim list
       common_layers.comma_separated_string_to_integer_list(
           getattr(hparams, "attention_dropout_broadcast_dims", "")))
   with tf.variable_scope(name):
@@ -1200,15 +1204,16 @@ def transformer_encoder(encoder_input,
     pad_remover = None
     if hparams.use_pad_remover and not common_layers.is_on_tpu():
       pad_remover = expert_utils.PadRemover(padding)
-    for layer in range(hparams.num_encoder_layers or hparams.num_hidden_layers):
+    # MAIN STEP Build Net
+    for layer in range(hparams.num_encoder_layers or hparams.num_hidden_layers): # Core for encoder
       with tf.variable_scope("layer_%d" % layer):
         with tf.variable_scope("self_attention"):
           y = common_attention.multihead_attention(
-              common_layers.layer_preprocess(x, hparams),
+              common_layers.layer_preprocess(x, hparams), # # layer normalization according to hparams
               None,
               encoder_self_attention_bias,
-              hparams.attention_key_channels or hparams.hidden_size,
-              hparams.attention_value_channels or hparams.hidden_size,
+              hparams.attention_key_channels or hparams.hidden_size, # is hidden_size. according to hparams
+              hparams.attention_value_channels or hparams.hidden_size, # is hidden_size. according to hparams
               hparams.hidden_size,
               hparams.num_heads,
               hparams.attention_dropout,
@@ -1219,20 +1224,20 @@ def transformer_encoder(encoder_input,
               dropout_broadcast_dims=attention_dropout_broadcast_dims,
               max_length=hparams.get("max_length"),
               vars_3d=hparams.get("attention_variables_3d"))
-          x = common_layers.layer_postprocess(x, y, hparams)
+          x = common_layers.layer_postprocess(x, y, hparams) # add x on y then dropout then return the output, according to hparams
         with tf.variable_scope("ffn"):
           y = transformer_ffn_layer(
-              common_layers.layer_preprocess(x, hparams),
+              common_layers.layer_preprocess(x, hparams), # layer normalization according to hparams
               hparams,
               pad_remover,
               conv_padding="SAME",
               nonpadding_mask=nonpadding,
               losses=losses)
-          x = common_layers.layer_postprocess(x, y, hparams)
+          x = common_layers.layer_postprocess(x, y, hparams) # add x on y then dropout then return the output, according to hparams
     # if normalization is done in layer_preprocess, then it should also be done
     # on the output, since the output can grow very large, being the sum of
     # a whole stack of unnormalized layer outputs.
-    return common_layers.layer_preprocess(x, hparams)
+    return common_layers.layer_preprocess(x, hparams) # layer normalization according to hparams
 
 
 def transformer_decoder(decoder_input,
@@ -1277,7 +1282,7 @@ def transformer_decoder(decoder_input,
     y: a Tensors
   """
   x = decoder_input
-  attention_dropout_broadcast_dims = (
+  attention_dropout_broadcast_dims = ( # get dim list
       common_layers.comma_separated_string_to_integer_list(
           getattr(hparams, "attention_dropout_broadcast_dims", "")))
   with tf.variable_scope(name):
@@ -1383,9 +1388,9 @@ def transformer_ffn_layer(x,
   if ffn_layer == "conv_hidden_relu":
     # Backwards compatibility
     ffn_layer = "dense_relu_dense"
-  if ffn_layer == "dense_relu_dense":
+  if ffn_layer == "dense_relu_dense": # this branch according to hparam
     # In simple convolution mode, use `pad_remover` to speed up processing.
-    if pad_remover:
+    if pad_remover: # this branch (pad_remover: true in hparam)
       original_shape = common_layers.shape_list(x)
       # Collapse `x` across examples, and remove padding positions.
       x = tf.reshape(x, tf.concat([[-1], original_shape[2:]], axis=0))
@@ -1396,7 +1401,7 @@ def transformer_ffn_layer(x,
         hparams.hidden_size,
         dropout=hparams.relu_dropout,
         dropout_broadcast_dims=relu_dropout_broadcast_dims)
-    if pad_remover:
+    if pad_remover: # this branch (pad_remover: true in hparam)
       # Restore `conv_output` to the original shape of `x`, including padding.
       conv_output = tf.reshape(
           pad_remover.restore(tf.squeeze(conv_output, axis=0)), original_shape)

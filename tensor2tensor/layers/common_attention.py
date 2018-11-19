@@ -823,8 +823,11 @@ class LshGating(object):
 
 
 @expert_utils.add_name_scope()
-def embedding_to_padding(emb):
+def embedding_to_padding(emb): 
   """Calculates the padding mask based on which embeddings are all zero.
+  tzl comment: 
+      return a binary array indicates whose emb_vec is all 0.
+      1:emb_vec is all 0, 0: emb_vec is not all 0
 
   We have hacked symbol_modality to return all-zero embeddings for padding.
 
@@ -909,14 +912,14 @@ def attention_bias_same_segment(query_segment_id, memory_segment_id):
     a `Tensor` with shape [batch, 1, query_length, memory_length].
   """
   ret = tf.to_float(
-      tf.not_equal(
+      tf.not_equal( # Compare on each-each position. For query_length*memory_length matrix: 1: not equal 0: equal
           tf.expand_dims(query_segment_id, 2),
           tf.expand_dims(memory_segment_id, 1))) * -1e9
   return tf.expand_dims(ret, axis=1)
 
 
 @expert_utils.add_name_scope()
-def attention_bias_ignore_padding(memory_padding):
+def attention_bias_ignore_padding(memory_padding): # just expand_dims
   """Create an bias tensor to be added to attention logits.
 
   Args:
@@ -1485,6 +1488,14 @@ def dot_product_attention(q,
 
   Returns:
     Tensor with shape [..., length_q, depth_v].
+  tzl comment: 
+    return matmul( dropout( softmax(matmul(q, k) + bias) ) ,v)
+
+    q: [..., length_q, depth_k] represents of q, each time/position has a vector
+    k: [..., length_kv, depth_k] represents of k, each time/position has a vector
+    matmul(q, k): [..., length_q, length_kv] mutual matrix of q and k, each cell M_ij is a float indicates the weight/similarity of q_i and k_j 
+    v: [..., length_kv, depth_v] memory correspending to k. every postion in q can look up every dim in v, then fetch a vector
+    matmul(matmul(q, k), v): [..., length_q, depth_v]
   """
   with tf.variable_scope(
       name, default_name="dot_product_attention", values=[q, k, v]) as scope:
@@ -2929,15 +2940,20 @@ def masked_local_attention_2d(q,
 
 
 def compute_attention_component(antecedent,
-                                total_depth,
-                                filter_width=1,
+                                total_depth, # hidden dim according to hparam
+                                filter_width=1, # 1 according to hparam
                                 padding="VALID",
                                 name="c",
-                                vars_3d_num_heads=0):
+                                vars_3d_num_heads=0): # vars_3d_num_heads is 0 according to program,hparam,default
   """Computes attention compoenent (query, key or value).
 
   Args:
     antecedent: a Tensor with shape [batch, length, channels]
+    tzl comment: 
+        channels is the embedding dim in NLP
+        input: [batch, seq_length, emb_dim]
+        layer: FC layer according to program and hparam(filter_width==1, vars_3d_num_heads==0)
+        output: [batch, seq_length, hidden_dim]
     total_depth: an integer
     filter_width: An integer specifying how wide you want the attention
       component to be.
@@ -2948,7 +2964,7 @@ def compute_attention_component(antecedent,
   Returns:
     c : [batch, length, depth] tensor
   """
-  if vars_3d_num_heads > 0:
+  if vars_3d_num_heads > 0: # not this branch
     assert filter_width == 1
     input_depth = antecedent.get_shape().as_list()[-1]
     depth_per_head = total_depth // vars_3d_num_heads
@@ -2963,8 +2979,8 @@ def compute_attention_component(antecedent,
     var = tf.cast(var, antecedent.dtype)
     var = tf.reshape(var, [input_depth, total_depth])
     return tf.tensordot(antecedent, var, axes=1)
-  if filter_width == 1:
-    return common_layers.dense(
+  if filter_width == 1: # this branch according to program and hparams
+    return common_layers.dense( # FC layer
         antecedent, total_depth, use_bias=False, name=name)
   else:
     return common_layers.conv1d(
@@ -2973,13 +2989,13 @@ def compute_attention_component(antecedent,
 
 def compute_qkv(query_antecedent,
                 memory_antecedent,
-                total_key_depth,
-                total_value_depth,
-                q_filter_width=1,
-                kv_filter_width=1,
+                total_key_depth, # hidden_dim according to hparam
+                total_value_depth, # hidden_dim according to hparam
+                q_filter_width=1, # 1 according to hparam
+                kv_filter_width=1, # 1 according to hparam
                 q_padding="VALID",
                 kv_padding="VALID",
-                vars_3d_num_heads=0):
+                vars_3d_num_heads=0): # vars_3d_num_heads is 0 according to program,hparam,default
   """Computes query, key and value.
 
   Args:
@@ -2997,26 +3013,26 @@ def compute_qkv(query_antecedent,
   Returns:
     q, k, v : [batch, length, depth] tensors
   """
-  if memory_antecedent is None:
+  if memory_antecedent is None: # for self-attention
     memory_antecedent = query_antecedent
   q = compute_attention_component(
-      query_antecedent,
-      total_key_depth,
-      q_filter_width,
+      query_antecedent, 
+      total_key_depth, # hidden dim
+      q_filter_width, # 1
       q_padding,
       "q",
       vars_3d_num_heads=vars_3d_num_heads)
   k = compute_attention_component(
       memory_antecedent,
-      total_key_depth,
-      kv_filter_width,
+      total_key_depth, # hidden dim
+      kv_filter_width, # 1
       kv_padding,
       "k",
       vars_3d_num_heads=vars_3d_num_heads)
   v = compute_attention_component(
       memory_antecedent,
-      total_value_depth,
-      kv_filter_width,
+      total_value_depth, # hidden dim
+      kv_filter_width, # 1
       kv_padding,
       "v",
       vars_3d_num_heads=vars_3d_num_heads)
@@ -3024,21 +3040,21 @@ def compute_qkv(query_antecedent,
 
 
 def multihead_attention(query_antecedent,
-                        memory_antecedent,
+                        memory_antecedent, # if self-attention: memory_antecedent = none; corss-attention: memory_antecedent not none
                         bias,
-                        total_key_depth,
-                        total_value_depth,
+                        total_key_depth, # is hidden_size. according to hparams
+                        total_value_depth, # is hidden_size. according to hparams
                         output_depth,
                         num_heads,
                         dropout_rate,
                         shared_rel=False,
                         max_relative_position=None,
                         image_shapes=None,
-                        attention_type="dot_product",
+                        attention_type="dot_product", # Default and hparam are both dot_product
                         block_length=128,
                         block_width=128,
-                        q_filter_width=1,
-                        kv_filter_width=1,
+                        q_filter_width=1, # 1: according to program
+                        kv_filter_width=1, # 1: according to program
                         q_padding="VALID",
                         kv_padding="VALID",
                         cache=None,
@@ -3096,7 +3112,7 @@ def multihead_attention(query_antecedent,
       a string key created from the variable scope (including name).
     make_image_summary: Whether to make an attention image summary.
     dropout_broadcast_dims:  an optional list of integers less than 4
-      specifying in which dimensions to broadcast the dropout decisions.
+      specifyIng in which dimensions to broadcast the dropout decisions.
       saves memory.
     max_length: an integer - needed by relative attention
     vars_3d: use 3-dimensional variables for input/output transformations
@@ -3129,27 +3145,30 @@ def multihead_attention(query_antecedent,
   if total_value_depth % num_heads != 0:
     raise ValueError("Value depth (%d) must be divisible by the number of "
                      "attention heads (%d)." % (total_value_depth, num_heads))
-  vars_3d_num_heads = num_heads if vars_3d else 0
+  vars_3d_num_heads = num_heads if vars_3d else 0 # vars_3d:False vars_3d_num_heads:0 according to hparam
   with tf.variable_scope(name, default_name="multihead_attention",
                          values=[query_antecedent, memory_antecedent]):
 
-    if cache is None or memory_antecedent is None:
+    if cache is None or memory_antecedent is None: # this branch (cache is none, memory_antecedent not none in training according to hparam)
+      # if self-attention: memory_antecedent = none; elif corss-attention: memory_antecedent not none
+      # total_key_depth and total_value_depth are hidden_size. according to hparams
+      # q_filter_width and kv_filter_width is 1 according to hparams. vars_3d_num_heads is 0 
       q, k, v = compute_qkv(query_antecedent, memory_antecedent,
                             total_key_depth, total_value_depth, q_filter_width,
                             kv_filter_width, q_padding, kv_padding,
                             vars_3d_num_heads=vars_3d_num_heads)
-    if cache is not None:
+    if cache is not None: # not this branch
       if attention_type != "dot_product":
         # TODO(petershaw): Support caching when using relative position
         # representations, i.e. "dot_product_relative" attention.
         raise NotImplementedError(
             "Caching is not guaranteed to work with attention types other than"
             " dot_product.")
-      if bias is None:
+      if bias is None: 
         raise ValueError("Bias required for caching. See function docstring "
                          "for details.")
 
-      if memory_antecedent is not None:
+      if memory_antecedent is not None: 
         # Encoder-Decoder Attention Cache
         q = compute_attention_component(query_antecedent, total_key_depth,
                                         q_filter_width, q_padding, "q",
@@ -3179,7 +3198,7 @@ def multihead_attention(query_antecedent,
           v = cache["v"] = tf.transpose(tmp_v, perm=[1, 2, 0, 3])
 
     q = split_heads(q, num_heads)
-    if cache is None:
+    if cache is None: # this branch
       k = split_heads(k, num_heads)
       v = split_heads(v, num_heads)
 
@@ -3192,7 +3211,7 @@ def multihead_attention(query_antecedent,
       x = attention_type(q, k, v, **kwargs)
       if isinstance(x, tuple):
         x, additional_returned_value = x  # Unpack
-    elif attention_type == "dot_product":
+    elif attention_type == "dot_product": # this branch when cross-attention according to hparam
       x = dot_product_attention(q, k, v, bias, dropout_rate, image_shapes,
                                 save_weights_to=save_weights_to,
                                 make_image_summary=make_image_summary,

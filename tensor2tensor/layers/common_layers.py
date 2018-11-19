@@ -785,9 +785,9 @@ def layer_preprocess(layer_input, hparams):
   Returns:
     a Tensor
   """
-  assert "a" not in hparams.layer_preprocess_sequence, (
+  assert "a" not in hparams.layer_preprocess_sequence, ( # not use a according to hparams
       "No residual connections allowed in hparams.layer_preprocess_sequence")
-  return layer_prepostprocess(
+  return layer_prepostprocess( # this operaion is layer normalization according to hparams
       None,
       layer_input,
       sequence=hparams.layer_preprocess_sequence,
@@ -822,7 +822,7 @@ def layer_postprocess(layer_input, layer_output, hparams):
   Returns:
     a Tensor
   """
-  return layer_prepostprocess(
+  return layer_prepostprocess( # add previous_value(add layer_input on layer_output) and apply dropout according to hparams
       layer_input,
       layer_output,
       sequence=hparams.layer_postprocess_sequence,
@@ -1470,7 +1470,7 @@ def maybe_zero_out_padding(inputs, kernel_size, nonpadding_mask):
   return inputs
 
 
-def dense_relu_dense(inputs,
+def dense_relu_dense(inputs,  # two FC layer and a dropout
                      filter_size,
                      output_size,
                      output_activation=None,
@@ -1478,8 +1478,9 @@ def dense_relu_dense(inputs,
                      dropout_broadcast_dims=None,
                      name=None):
   """Hidden layer with RELU activation followed by linear projection."""
+  """tzl comment: input is a vector (without sequence)"""
   layer_name = "%s_{}" % name if name else "{}"
-  h = dense(
+  h = dense( # same as tf.layer.dense  input and output is vector (without sequence)
       inputs,
       filter_size,
       use_bias=True,
